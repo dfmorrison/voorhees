@@ -85,9 +85,9 @@ While @url{http://quicklisp.org,Quicklisp} is not required to run Voorhees, it i
 recommended. The rest of this section assumes you have Quicklisp installed and
 configured in the usual way.
 
-To install Voorhees, download the
-@url{https://bitbucket.org/dfm2/voorhees/downloads/voorhees-0.4.zip,Voorhees zip file}
-from Bitbucket and unzip it.
+To install Voorhees, download the latest version from
+@url{https://bitbucket.org/dfmorrison/voorhees/downloads/?tab=tags,Bitbucket}
+and extract the archive.
 Then move the resulting directory to one of
 @itemize
 @item

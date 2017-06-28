@@ -8,7 +8,8 @@ other software on the same or another machine using JSON over TCP.
 Documentation of Voorhees, including information on downloading and
 installing it, is available at
 
-http://dfm2.bitbucket.org/voorhees/index.html
+http://halle.psy.cmu.edu/voorhees-manual.pdf
+
 
 
 
