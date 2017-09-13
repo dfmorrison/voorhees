@@ -40,7 +40,7 @@
 (defparameter *json-object-key-package* nil
   "A package designator. When decoding JSON to a Lisp expression the keys of any JSON
 objects will be converted to symbols interned in this package. If @code{nil}, the default,
-the current package is used.")
+the current package, is used.")
 
 (defparameter *json-float-format* 'single-float
   "A type specifier for a subtype of @code{float}. When floating point numbers appear

@@ -23,7 +23,7 @@
   :version "0.5"
   :license "MIT"
   :author "Don Morrison <dfm2@cmu.edu>"
-  :depends-on (:alexandria :iterate :split-sequence #|:usocket|# :usocket-server :st-json
+  :depends-on (:alexandria :iterate :split-sequence :usocket-server :st-json
                            :local-time :cl-ppcre)
   :components ((:file "voorhees"))
   :in-order-to ((test-op (test-op "voorhees/test"))))

@@ -18,7 +18,7 @@
 ;;; OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ;;; This is a trivial example of Voorhees in action. It uses the addition model from the
-;;; first unit of the ACT-R tutorial to add numbers, the numbers being supply over a
+;;; first unit of the ACT-R tutorial to add numbers, the numbers being supplied over a
 ;;; TCP connection, and the result then being returned over that connection.
 ;;;
 ;;; To run the example first ensure you have Voorhees installed as suggested in its
@@ -31,7 +31,7 @@
 ;;; { "arg1": 3, "arg2": 5 }
 ;;;
 ;;; The ACT-R model will be run and the sum returned. For example, if you use netcat (nc)
-;;; to connection the interaction in the second terminal might look something like this:
+;;; to connect the interaction in the second terminal might look something like this:
 ;;;
 ;;; $ nc localhost 9907
 ;;; {"arg1": 3, "arg2": 5}
@@ -60,7 +60,7 @@
 (ql:quickload :voorhees)
 
 ;; Define the ACT-R model. This will generate a pair of warnings about slots in the goal
-;; buffer not being accessed from productions; these may be ignored.
+;; buffer not being accessed from productions; these may be safely ignored.
 
 (clear-all)
 
