@@ -20,15 +20,19 @@
 (in-package :asdf-user)
 
 (defsystem :voorhees
-  :version "0.5"
+  :version (:read-file-form "VERSION")
   :license "MIT"
   :author "Don Morrison <dfm2@cmu.edu>"
-  :depends-on (:alexandria :iterate :split-sequence :usocket-server :st-json
-                           :local-time :cl-ppcre)
+  :description "A library to support connecting cognitive models, particularly those
+written in ACT-R, to an experimental environment, using JSON"
+  :depends-on (:alexandria :iterate :usocket-server :st-json :local-time :cl-ppcre)
   :components ((:file "voorhees"))
   :in-order-to ((test-op (test-op "voorhees/test"))))
 
 (defsystem :voorhees/test
+  :license "MIT"
+  :author "Don Morrison <dfm2@cmu.edu>"
+  :description "Unit tests for Voorhees"
   :depends-on (:voorhees :alexandria :iterate :lisp-unit2 :st-json :bordeaux-threads)
   :components ((:file "tests"))
   :perform (test-op (o s)
@@ -36,5 +40,8 @@
              (funcall (find-symbol (symbol-name :test-voorhees) :voorhees/test))))
 
 (defsystem :voorhees/doc
-  :depends-on (:voorhees :alexandria :iterate :trivial-documentation :cl-fad)
+  :license "MIT"
+  :author "Don Morrison <dfm2@cmu.edu>"
+  :description "Support fo building the documentation for Voorhees"
+  :depends-on (:voorhees :alexandria :iterate :trivial-documentation :cl-fad :asdf)
   :components ((:file "extract-documentation")))

@@ -20,65 +20,567 @@
 (defpackage :voorhees
   (:nicknames :vh)
   (:use :common-lisp :alexandria :iterate :split-sequence)
-  (:export :*actr-package*
-           :*json-float-elide-trailing-zeros*
-           :*json-float-format*
-           :*json-float-maximum-fixed*
-           :*json-float-minimum-fixed*
-           :*json-object-key-package*
-           :*json-float-precision*
-           :*json-float-upper-case-exponent*
-           :chunkify
-           :describe-json
-           :run-model
-           :stapify))
+  (:export #:*actr-package*
+           #:*default-at-keys*
+           #:*default-float-elide-trailing-zeros*
+           #:*default-float-format*
+           #:*default-float-maximum-fixed*
+           #:*default-float-minimum-fixed*
+           #:*default-float-precision*
+           #:*default-float-upper-case-exponent*
+           #:*default-object-key-package*
+           #:chunkify
+           #:describe-json
+           #:json-string
+           #:parse-json
+           #:read-json
+           #:run-model
+           #:write-json))
 
 (in-package :voorhees)
 
 
 
-(defparameter *json-object-key-package* nil
-  "A package designator. When decoding JSON to a Lisp expression the keys of any JSON
-objects will be converted to symbols interned in this package. If @code{nil}, the default,
-the current package, is used.")
+(defparameter *default-intern-keys* t
+  "@code{t}, @code{nil} or a package designator, the value used for the @var{intern}
+argument to @code{read-json} or @code{parse-json} if none is explicitly supplied,
+indicating how to deal with keys in JSON objects. Initially @code{t}.")
 
-(defparameter *json-float-format* 'single-float
-  "A type specifier for a subtype of @code{float}. When floating point numbers appear
-in JSON that is being converted to Lisp, they will be converted to instances of this
-type. The default is @code{single-float}.")
+(defparameter *default-at-keys* t
+  "A generalized boolean, the value used for the @var{at-keys} argument to
+@code{read-json} or @code{parse-json} if none is explicitly supplied, indicating how to
+deal with keys in JSON objects that begin with @samp{@@}. Initially @code{t}.")
 
-(defparameter *json-float-minimum-fixed* 1.0e-3
-  "@include includes/json-float-maximum-fixed.texi
-A positive, real number. Determines whether floating point numbers, when converted to
-JSON, are represented in fixed or exponential format. If the absolute value of the number
-is greater than or equal to @code{*json-float-minimum-fixed*} (default value 1.0e-3) and
-less than @code{*json-float-maximum-fixed*} (default value 1.0e+7) fixed format will be
-used, and otherwise exponential format. It is strongly recommended that
-@code{*json-float-minimum-fixed*} and @code{*json-float-precision*} only be assigned
-values such that the former's first non-zero digit will always appear in the printed
-representation.")
+(defparameter *default-float-format* 'single-float
+  "An atomic type specifier for a subtype of @code{float}, the value used for the
+@var{float} argument to @code{read-json} or @code{parse-json} if none is explicitly
+supplied, indicating what Lisp format to use to represent floating point numbers read from
+JSON values. Initially @code{single-float}.")
 
-(defparameter *json-float-maximum-fixed* 1.0e+7)
+(defparameter *default-float-minimum-fixed* 1.0e-3
+  "A positive, real number, the value used for the @var{minimum-fixed} argument to
+@code{write-json} or @code{json-string} if none is explicitly supplied, used to determine
+whether to use fixed format or scientific notation when writing floating point numbers as
+JSON. Intially @code{1.0e-3}.")
 
-(defparameter *json-float-precision* 4
-  "A positive integer, the maximum number of digits to be displayed after the decimal
-point when converting floating point numbers to JSON. If
-@code{*json-float-elide-trailing-zeros*} is false exactly this many digits will be
-displayed after the decimal point. The default value is 4.")
+(defparameter *default-float-maximum-fixed* 1.0e+7
+  "A positive, real number, the value used for the @var{maximum-fixed} argument to
+@code{write-json} or @code{json-string} if none is explicitly supplied, used to determine
+whether to use fixed format or scientific notation when writing floating point numbers as
+JSON. Intially @code{1.0e+7}.")
 
-(defparameter *json-float-elide-trailing-zeros* t
-  "A generalized boolean. If true, the default then when converting floating point numbers
-to JSON the last digit following the decimal point, but before the exponentiation marker,
-if any, will be non-zero, even if this means fewer than @code{*json-float-precision*}
-digits will be shown; an exception is made for the case where all digits following the
-decimal point would be zero, in which case one will be shown. If
-@code{*json-float-elide-trailing-zeros*} is false exactly @code{*json-float-precision*}
-digits will always be show after the decimal point.")
+(defparameter *default-float-precision* 4
+  "A positive integer, the value used for the @var{precision} argument to
+@code{write-json} or @code{json-string} if none is explicitly supplied, used to determine
+the number of digits to be displayed after the decimal point when formating a floating
+point number in JSON. Initially @code{4}.")
 
-(defparameter *json-float-upper-case-exponent* nil
-  "A generalized boolean. If true then when converting floating point numbers to JSON, if
-they are displayed in exponential notation an upper case `E' will be used; and otherwise a
-lower case `e' is used. The default value is @code{nil}.")
+(defparameter *default-float-elide-trailing-zeros* t
+  "A generalized boolean, the value used for the @var{elide} argument to @code{write-json}
+or @code{json-string} if none is explicitly supplied, used to determine whether to omit
+trailing zeros when formating point number in JSON. Initially @code{t}.")
+
+(defparameter *default-float-upper-case-exponent* nil
+  "A generalized boolean, the value used for the @var{upper-case-exponent} argument to
+@code{write-json} or @code{json-string} if none is explicitly supplied, used to determine
+whether to use an upper case @samp{E} or lower case @samp{e} when writing floating point
+numbers in JSON as scientific notation. Initially @code{nil}.")
+
+(defvar *intern-keys*)
+(defvar *at-keys*)
+(defvar *float-format*)
+(defvar *float-minimum-fixed*)
+(defvar *float-maximum-fixed*)
+(defvar *float-precision*)
+(defvar *float-elide-trailing-zeros*)
+(defvar *float-upper-case-exponent*)
+
+(defmacro define-json-reader (name (&rest args) &body body)
+  ;; This won't work for a general argument list, but it's good enough for our purposes.
+  `(defun ,name (,@args
+                 ,@(unless (member '&key args) '(&key))
+                 ((:intern *intern-keys*) *default-intern-keys*)
+                 ((:at-keys *at-keys*) *default-at-keys*)
+                 ((:float *float-format*) *default-float-format*))
+     ,(and (stringp (first body)) (pop body))
+     (let ((st-json:*decode-objects-as* :jso))
+       ,@body)))
+
+(define-json-reader read-json (stream)
+  "===summary===
+In Voorhees a JSON value is represented in Lisp as nestings of atoms, a-lists and simple
+vectors, isomorphic to the JSON value, as follows.
+
+A JSON @strong{array} is represented by a Lisp general vector, each element of which is
+the Lisp representation of the JSON value that is an element of the JSON array.
+
+A JSON @strong{object} is represented by a Lisp a-list, the car of each element
+corresponding to the string key of the JSON object, and the cdr to the corresponding JSON
+value in the object. The JSON strings that are the keys of the object members typically
+are converted to interned Lisp symbols, but can be left as Lisp strings if preferred. The
+user has control over the package in which these symbols are interned. The JSON values of
+the objects named by these keys are converted to their Lisp representations and are the
+cdrs of the elements of the a-list.
+
+It is often convenient to treat keys beginning with @samp{@@} as system keys, reserved for
+special purposes. Some uses of Voorhees depend upon treating such keys specially, as do
+some other uses of JSON. As initially configured Voorhees always interns such keys in the
+keyword package, but this can be turned off. If any special use is being made of some of
+these @samp{@@} keys it is strongly recommended that keys beginning with @samp{@@} always
+be viewed as so reserved.
+
+When these keys, whether normal keys or @samp{@@} keys, are interned symbols the case of
+their print names are usually different than that of the JSON strings:
+@itemize
+@item
+if the JSON string contains lower case letters, as determined by the usual
+Lisp predicate @code{lower-case-p}, but no upper case
+letters (@code{upper-case-p}), it is converted to all upper case, with the usual
+Lisp function @code{string-upcase}, and then interned in the appropriate package;
+
+@item
+if the JSON string contains upper case letters, but no lower case letters,
+it is converted to all lower case and then interned in the appropriate package;
+
+@item
+otherwise the JSON string either contains no letters, or contains a mixture
+of upper case and lower case letters, and is interned as is.
+@end itemize
+@noindent
+With this convention the usual lower case only JSON keys are represented by the usual
+upper case only Lisp symbols. Note that a Lisp symbol with lower case letters,
+representing an upper case or mixed case JSON key string, will be read and written by Lisp
+using vertical bar or backslash notation. When keys are instead represented by Lisp
+strings no case conversion is performed.
+
+A JSON @strong{string}, other than a key in an object, is represented by the
+corresponding Lisp string, with no alteration of case.
+
+A JSON @strong{number} without a decimal point is represented by a Lisp integer.
+
+A JSON @strong{number} with a decimal point is represented by a Lisp float. Note that in
+Lisp it will typically be a fixed-precision, binary representation of the number and thus
+not necessarily exactly equal to the arbitrary, decimal representation in JSON. The
+particular floating point format used is configurable, and is initially
+@code{single-float}.
+
+When writing a Lisp representation of a JSON value back to JSON some control is provided
+over the represention used, including precision.
+
+The JSON @strong{special values} @code{true}, @code{false} and @code{null} are
+represented by the Lisp keywords @code{:true}, @code{:false} and @code{:null},
+respectively. In particular @code{false} and @code{null} are @emph{not} represented by
+Lisp @code{nil}, which instead represents a JSON empty object, @code{@{@}}. A JSON
+empty array, @code{[]}, is represented by an empty Lisp vector, @code{#()}.
+
+This representation of JSON values in Lisp is essentially reversable. When when writing
+back such a value back to JSON it will be equivalent to the original version read. The
+only differences are: floating point numbers of high precision may be slightly altered
+because of the conversion to and from a fixed-precision, binary form which is typically
+not an issue for numbers with only a few digits of precision; and whitespace between JSON
+tokens will be removed (of course, whitespace within JSON strings is retained).
+
+As an example of the correspondence between JSON values and Lisp form, with Voorhees's
+initial configuration, the JSON value
+@example
+@group
+ @{ \"key1\": \"a value\",
+   \"KEY2\": [ true, 3.14, @{@}, @{ \"Key3\": null@}, false],
+   \"@@id\": 17,
+   \"key4\": [] @}
+@end group
+@end example
+is represented in Lisp by
+@example
+@group
+ ((KEY1 . \"a value\")
+  (|key2| . #(:TRUE 3.14 NIL ((|Key3| . :NULL)) :FALSE))
+  (:@@ID . 17)
+  (KEY4 . #()))
+@end group
+@end example
+===endsummary===
+Reads a JSON value from the character input stream @var{stream}, skipping any leading
+whitespace and reading and discarding any trailing whitespace, and returns its Lisp
+representation.
+
+This function will block until a complete JSON value has been consumed. In addition, if the
+value is neither an object nor an array and the stream has not reached end of file it will
+need to peek at the next character to ensure it has finished reading the value. For this
+reason, when reading from a semi-interactive stream, such as from a TCP socket, it is
+highly recommended that each JSON value be followed by a newline or other whitespace
+character.
+
+If @var{intern} is @code{t} keys of JSON objects will be represented as symbols interned
+in the package that is the current value of @code{*package*}. If @code{nil} keys will be
+read as Lisp strings. Otherwise @var{intern} should be a package designator, and keys will
+be interned in that package. If @var{intern} is not supplied the current value of
+@code{*default-intern-keys*} is used; it is initially @code{t}.
+
+If the generalized boolean @var{at-keys} is true keys in JSON objects that start with
+@samp{@@} will always be interned in the keyword package, no matter what the value of
+@var{intern}. Otherwise keys starting with @samp{@@} will be treated the same as any other
+keys. If @var{at-keys} is not supplied the current value of @code{*default-at-keys*} is
+used; it is initially @code{t}.
+
+If @var{float} is supplied it should be one of the atomic type specifiers
+@code{short-float}, @code{single-float}, @code{double-float} or @code{long-float}. And
+numbers in the JSON value that contain a decimal point are read as Lisp floating point
+numbers of this type, subject to the usual collapsing of floating point types if all are
+not supported by a particular implementation. If @var{float} is not supplied it defaults
+to the current value of @code{*default-float-format*}; it is initially
+@code{single-float}.
+
+Whenever @var{intern} or @var{at-keys} leads to a key being interned in a package it is
+subject to the case conversion rules described above.
+
+An error will be signalled if a well-formed JSON value cannot be read from @var{stream};
+if @var{stream} is not an open character input stream; if @var{intern} is supplied and is
+not @code{t}, @code{nil} nor a package designator for an existing package; if @var{float}
+is not a suitable type specifier; or if any of the usual variety of runtime I/O errors
+possible occurs with @var{stream}.
+
+@example
+@group
+ (with-input-from-string (s
+      \"@{ \\\"description\\\": @{
+             \\\"name\\\": \\\"Wilbur\\\",
+             \\\"species\\\": \\\"Equus ferus caballus)\\\" @},
+         \\\"coordinates\\\": @{
+             \\\"x\\\": 1.2,
+             \\\"y\\\": 3.4,
+             \\\"z\\\": 5.6 @} @}\")
+   (read-json s))
+ @result{}
+ ((DESCRIPTION (NAME . \"Wilbur\")
+               (SPECIES . \"Equus ferus caballus)\"))
+  (COORDINATES (X . 1.2) (Y . 3.4) (Z . 5.6)))
+@end group
+@end example
+@noindent
+For further examples see @code{parse-json}."
+    (unpack-json (st-json:read-json stream)))
+
+(define-json-reader parse-json (string &key (start 0) end junk-allowed)
+  "Reads a JSON value from the string @var{string}, including any leading or trailing
+whitespace, and returns two values: the Lisp representation of the JSON value and an index
+into the string where parsing ended.
+
+If @var{start} and/or @var{end} are supplied they should be integer indices into
+@var{string} and only that portion of @var{string} bounded by them is considered.
+
+The generalized boolean @var{junk-allowed} determines what happens if further
+non-whitespace characters occur in the region of @var{string} bound by @var{start} and
+@var{end}. If false and such characters appear an error is signaled; if true no error is
+signalled and the second return value is the index of that first non-whitespace character
+following the JSON value read. If not supplied @var{junk-allowed} defaults to @code{nil}.
+
+The @var{intern}, @var{at-keys} and @var{float} arguments are interpreted as for the
+@code{read-json} function.
+
+Signals an error if no well-formed JSON value can be read from the designated region of
+@var{string}; if @var{string} is not a string; if @var{start} or @var{end} are not
+integers or are out of bounds for @var{string}; if @var{junk-allowed} is false and
+non-whitespace characters are found after the JSON value; if @var{intern} is supplied and
+is not @code{t}, @code{nil} nor a package designator for an existing package; or if
+@var{float} is not a suitable type specifier.
+@example
+@group
+ (values
+   (parse-json \"@{ \\\"description\\\": @{
+                      \\\"name\\\": \\\"Wilbur\\\",
+                      \\\"species\\\": \\\"Equus ferus caballus)\\\" @},
+                  \\\"coordinates\\\": @{
+                      \\\"x\\\": 1.2,
+                      \\\"y\\\": 3.4,
+                \\\"z\\\": 5.6 @} @}\"))
+ @result{}
+ ((DESCRIPTION (NAME . \"Wilbur\")
+               (SPECIES . \"Equus ferus caballus)\"))
+  (COORDINATES (X . 1.2) (Y . 3.4) (Z . 5.6)))
+@end group
+
+
+@group
+ (values (parse-json \" [ [ 3.1e22 ] ] \"))
+ @result{}
+ #(#(3.1e22))
+@end group
+
+
+@group
+ (values (parse-json \" [ [ 3.1e22 ] ] \"
+                :start 2 :end 14
+                :float 'double-float))
+ @result{}
+ #(3.1d22)
+@end group
+
+
+@group
+ (multiple-value-list
+   (parse-json \"@{\\\"@@id\\\":19,\\\"x\\\":\\\"y\\\"@}\"))
+ @result{}
+ (((:@@ID . 19) (X . \"y\")) 18)
+@end group
+
+
+@group
+ (values (parse-json \"@{\\\"@@id\\\":19,\\\"x\\\":\\\"y\\\"@}\"
+                     :intern :keyword))
+ @result{}
+ ((:@@ID . 19) (:X . \"y\"))
+@end group
+
+
+@group
+ (values (parse-json \"@{\\\"@@id\\\":19,\\\"x\\\":\\\"y\\\"@}\"
+                     :intern nil))
+ @result{}
+ ((:@@ID . 19) (\"x\" . \"y\"))
+@end group
+
+
+@group
+ (values (parse-json \"@{\\\"@@id\\\":19,\\\"x\\\":\\\"y\\\"@}\"
+                     :at-keys nil))
+ @result{}
+ ((@@ID . 19) (X . \"y\"))
+@end group
+
+
+@group
+ (values (parse-json \"@{\\\"@@id\\\":19,\\\"x\\\":\\\"y\\\"@}\"
+                     :intern nil
+                     :at-keys nil))
+ @result{}
+ ((\"@@id\" . 19) (\"x\" . \"y\"))
+@end group
+@end example"
+  (multiple-value-bind (result index)
+      (st-json:read-json-from-string string
+                                     :start start
+                                     :end end
+                                     :junk-allowed-p junk-allowed)
+    (values (unpack-json result) index)))
+
+(defun write-json (object stream
+                   &key (newline t) (finish t)
+                     ((:minimum-fixed *float-minimum-fixed*) *default-float-minimum-fixed*)
+                     ((:maximum-fixed *float-maximum-fixed*) *default-float-maximum-fixed*)
+                     ((:precision *float-precision*) *default-float-precision*)
+                     ((:elide *float-elide-trailing-zeros*) *default-float-elide-trailing-zeros*)
+                     ((:upper-case-exponent *float-upper-case-exponent*) *default-float-upper-case-exponent*))
+  "Writes a JSON value corresponding to the Lisp @var{object} to the character output
+stream @var{stream}, and returns @var{object}.
+
+If the generalized boolean @var{newline} is true, the default, it calls @code{terpri} on
+@var{stream} after writing the JSON value. This is highly recommended when writing values
+to semi-interactive streams, such as TCP sockets.
+
+If the generalized boolean @var{finish} is true, the default, it calls
+@code{finish-output} on @var{stream} after writing the JSON value, and a line termination
+if request, to @var{stream}, flushing the output buffer. This is usually the necessary
+when writing to semi-interactive streams, such as TCP sockets. In other situations if such
+buffer flushing causes too much unnecessary overhead it can be suppressed by supplying a
+value of @code{nil} for @var{finish}.
+
+If @var{minimum-fixed} and/or @var{maximum-fixed} are supplied they should be positive,
+real numbers. They determine whether floating point numbers, when converted to JSON, are
+represented in fixed or exponential format. If the absolute value of the number is greater
+than or equal to @var{minimum-fixed} and less than @var{maximum-fixed} fixed format will
+be used, and otherwise exponential format. If @var{minimum-fixed} or @var{maximum-fixed}
+are not supplied they default to the current values of
+@code{*default-float-minimum-fixed*} and @code{*default-float-maximum-fixed*},
+respectively; these are initially @code{1.0e-3} and @code{1.0e+7}.
+
+If @var{precision} is supplied it should be a positive integer, the maximum number of
+digits to be displayed after the decimal point when converting floating point numbers to
+JSON. If the generalized boolean :elide is true then when converting floating point
+numbers to JSON the last digit following the decimal point, but before the exponentiation
+marker, if any, will be non-zero, even if this means fewer than @var{precision} digits
+will be shown; an exception is made for the case where all digits following the decimal
+point would be zero, in which case one will be shown. If not supplied @var{precision} and
+@var{elide} default to the current values of @code{*default-float-precision*} and
+@code{*default-float-elide-trailing-zeros*}, respectively. They are initially @code{4} and
+@code{t}.
+
+It is strongly recommended that @var{minimum-fixed} and @var{precision} only be assigned
+values such that a number displayed in fixed notation will always have its first non-zero
+digit appear in the printed representation.
+
+If @var{upper-case-exponent} is supplied it determines whether an upper case @samp{E} or
+lower case @samp{e} is used when displaying floating point numbers in exponential notation
+in JSON. If not supplied it defaults to the current value of
+@code{*default-float-upper-case-exponent*}, which is initially @code{nil}.
+
+Signals an error if @var{object} is not the Lisp representation of a JSON value; if
+@var{stream} is not an open character output stream; if @var{minimum-fixed} is not a
+postive real, less than @var{maximum-fixed}; if @var{maximum-fixed} is not a positive
+real greater than @var{minimum-fixed}; if precision is not a positive integer; or if any
+of the usual variety of runtime I/O errors possible occurs with @var{stream}.
+@example
+@group
+ (with-output-to-string (s)
+   (write-json '((x . 3.2) (\\y . 4.1)) s))
+ @result{}
+ \"@{\\\"x\\\":3.2,\\\"Y\\\":4.1@}
+ \"
+@end group
+@end example
+@noindent
+For further examples see @code{json-string}."
+  (st-json:write-json (pack-json object) stream)
+  (when newline
+    (terpri stream))
+  (when finish
+    (finish-output stream))
+  object)
+
+(defun json-string (object &rest keys &key minimum-fixed maximum-fixed precision elide upper-case-exponent)
+  "===lambda: (object &key minimum-fixed maximum-fixed precision elide upper-case-exponent)
+Returns a string representation of the JSON value corresponding to the Lisp
+@var{object}. The @var{minimum-fixed}, @var{maximum-fixed}, @var{precision}, @var{elide}
+and @var{upper-case-exponent} arguments are interpreted as for @code{write-json}.
+
+Signals an error if @var{object} is not the Lisp representation of a JSON value; if
+@var{minimum-fixed} is not a postive real, less than @var{maximum-fixed}; if
+@var{maximum-fixed} is not a positive real greater than @var{minimum-fixed}; or if
+precision is not a positive integer.
+@example
+@group
+ (json-string '((x . 3.2) (\\y . 4.1)) s)
+ @result{}
+ \"@{\\\"x\\\":3.2,\\\"Y\\\":4.1@}\"
+@end group
+
+
+@group
+ (json-string '((:@@id . 1) (:id . 2) (@@n . 3) (n . 4) (\"num\" . 5)))
+ @result{}
+ \"@{\\\"@@id\\\":1,\\\"id\\\":2,\\\"@@n\\\":3,\\\"n\\\":4,\\\"num\\\":5@}\"
+@end group
+
+
+@group
+ (json-string '((and . ((|and| . ((|aNd| . nil)))))))
+ @result{}
+ \"@{\\\"and\\\":@{\\\"AND\\\":@{\\\"aNd\\\":@{@}@}@}@}\"
+@end group
+
+
+@group
+ (json-string #(3.14159265359 7.2973525664d-3 1.0))
+ @result{}
+ \"[3.1416,0.0073,1.0]\"
+@end group
+
+
+@group
+ (json-string #(3.14159265359 7.2973525664d-3 1.0)
+              :elide nil)
+ @result{}
+ \"[3.1416,0.0073,1.0000]\"
+@end group
+
+
+@group
+ (json-string #(3.14159265359 7.2973525664d-3 1.0)
+              :precision 2)
+ @result{}
+ \"[3.14,0.01,1.0]\"
+@end group
+
+
+@group
+ (json-string #(3.14159265359 7.2973525664d-3 1.0)
+              :minimum-fixed 0.01)
+ @result{}
+ \"[3.1416,7.2974e-3,1.0]\"
+@end group
+
+
+@group
+ (json-string #(3.14159265359 7.2973525664d-3 1.0)
+              :maximum-fixed 2
+              :upper-case-exponent t)
+ @result{}
+ \"[3.1416E+0,0.0073,1.0]\"
+@end group
+@end example"
+  (declare (ignore minimum-fixed maximum-fixed precision elide upper-case-exponent))
+  (with-output-to-string (s)
+    (apply #'write-json object s :newline nil :finish nil keys)))
+
+(defun unpack-json (json)
+  (etypecase json
+    ((or keyword number string) json)
+    (st-json:jso (iter (for (key . value) :in (st-json::jso-alist json))
+                       (collect (cons (maybe-intern-key key) (unpack-json value)))))
+    (list (map 'vector #'unpack-json json))))
+
+(defun maybe-intern-key (string)
+  (cond ((and *at-keys* (not (zerop (length string))) (eql (char string 0) #\@))
+         (intern (flip-string-case-if-uniform string) :keyword))
+        (*intern-keys* (intern (flip-string-case-if-uniform string)
+                               (if (eq *intern-keys* t) *package* *intern-keys*)))
+        (t string)))
+
+(defun pack-json (json)
+  (etypecase json
+    ((or keyword number string) json)
+    (list (st-json::make-jso
+           :alist (iter (for (key . value) :in json)
+                        (collect (cons (etypecase key
+                                         (symbol (flip-string-case-if-uniform (symbol-name key)))
+                                         (string key))
+                                       (pack-json value))))))
+    ;; the vector clause must come after the string clause, since a string is a vector
+    (vector (map 'list #'pack-json json))))
+
+(defun flip-string-case-if-uniform (string)
+  (iter (with lower-case-seen := nil)
+        (with upper-case-seen := nil)
+        (for c :in-string string)
+        (until (and lower-case-seen upper-case-seen))
+        (cond ((lower-case-p c) (setf lower-case-seen t))
+              ((upper-case-p c) (setf upper-case-seen t)))
+        (finally (return (cond ((not (xor lower-case-seen upper-case-seen)) string)
+                               (upper-case-seen (string-downcase string))
+                               (t (string-upcase string)))))))
+
+
+(defmethod st-json:read-json :around ((in stream) &optional (junk-allowed-p t))
+  (declare (ignore in junk-allowed-p))
+  (let ((*read-default-float-format* *float-format*))
+    (call-next-method)))
+
+(defparameter +float-scanner+
+  (ppcre:create-scanner "^(-?\\d+\\.\\d\\d*?)0*((?:e[+-]?\\d+)?)?$"
+                        :case-insensitive-mode t))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  ;; Suppress the warning about the subsequent method redefinition.
+  (when-let ((method (find-method #'st-json:write-json-element ()
+                                  (mapcar #'find-class '(real t))
+                                  nil)))
+    (remove-method #'st-json:write-json-element method)))
+
+(defmethod st-json:write-json-element ((element real) stream)
+  (let ((s (if (and *float-minimum-fixed*
+                    *float-maximum-fixed*
+                    (>= (abs element) *float-minimum-fixed*)
+                    (< (abs element) *float-maximum-fixed*))
+               (format nil "~,vF" *float-precision* element)
+               (format nil "~,v,,,,,vE"
+                       *float-precision*
+                       (if *float-upper-case-exponent* #\E #\e)
+                       element))))
+    (if *float-elide-trailing-zeros*
+        (ppcre:register-groups-bind (pre post) (+float-scanner+ s)
+          (princ pre stream)
+          (princ post stream))
+        (princ s stream))))
 
 
 
@@ -236,20 +738,8 @@ connections indefintely. Use Control-C to kill it if necessary, or simply termin
                   (finish-output stream)))
     (write-log log-file "run-model done")))
 
-
-
 (define-constant +whitespace+ '(#\space #\newline #\tab #\return #\page) :test #'equal)
 
-(defmethod st-json:read-json :around ((in stream) &optional (junk-allowed-p t))
-  (declare (ignore in junk-allowed-p))
-  (let ((*read-default-float-format* *json-float-format*))
-    (call-next-method)))
-
-;; Unfortunately st-json has a bug where it is unable to recognize the end of a JSON
-;; object without reading a whole lot more first, making it rather difficult to use in
-;; a streaming context. So we limit ourselves to JSON objects followed by a new line.
-;; TODO Investigate further alternatives to st-json (cl-json is worse; yason has its own
-;;      problems, but may be able to be made to work in this context).
 (defun read-multiline-json (stream)
   (loop with lines = (make-array 100 :element-type 'character
                                  :adjustable t :fill-pointer 0)
@@ -263,158 +753,6 @@ connections indefintely. Use Control-C to kill it if necessary, or simply termin
                     (return (values nil nil))
                     (error "End of file encountered while parsing multi-line JSON ~A"
                            lines))))
-
-(defun unpack-json (json)
-  (etypecase json
-    (list (coerce (mapcar #'unpack-json json) 'vector))
-    (st-json:jso (iter (for (key . value) :in (slot-value json 'st-json::alist))
-                       (for sym := (string-to-symbol key))
-                       (when (and (member sym '(:@id :@value))
-                                  (not (typep value '(or string (integer 0 *)))))
-                         (error "The value of an :@id (~S) must be a string or a non-negative integer."
-                                value))
-                       (collect (cons sym (unpack-json value)))))
-    ((or keyword number string) json)))
-
-;; TODO Figure out appropriate error handling here. Since, unlike unpack-json, this
-;;      function is being passed user supplied data, it may very well be ill-formed, and
-;;      that probably shouldn't take everything down with it.
-(defun pack-json (json)
-  (etypecase json
-    (list (apply #'st-json:jso (loop for (car . cdr) in json
-                                     nconc (list (symbol-to-string car)
-                                                 (pack-json cdr)))))
-    ((or keyword number string) json)
-    ;; the vector clause must come after the string clause, since is string is a vector
-    (vector (mapcar #'pack-json (coerce json 'list)))))
-
-(defun string-to-symbol (s)
-  (intern (maybe-flip-string-case s)
-          (if (and (> (length s) 0) (eql (char s 0) #\@))
-              :keyword
-              (or *json-object-key-package* *package*))))
-
-(defun symbol-to-string (s)
-  (maybe-flip-string-case (symbol-name s)))
-
-(defun maybe-flip-string-case (s)
-  (loop with lower-case-seen = nil
-        with upper-case-seen = nil
-        for c across s
-        until (and lower-case-seen upper-case-seen)
-        when (lower-case-p c) do (setf lower-case-seen t)
-        when (upper-case-p c) do (setf upper-case-seen t)
-        finally (return (cond ((not (xor lower-case-seen upper-case-seen)) s)
-                              (upper-case-seen (string-downcase s))
-                              (t (string-upcase s))))))
-
-(defparameter +float-scanner+
-  (ppcre:create-scanner "^(-?\\d+\\.\\d\\d*?)0*((?:e[+-]?\\d+)?)?$"
-                        :case-insensitive-mode t))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (when-let ((method (find-method #'st-json:write-json-element ()
-                                  (mapcar #'find-class '(real t))
-                                  nil)))
-    ;; stiffle the warning about the subsequent method redefinition
-    (remove-method #'st-json:write-json-element method)))
-
-(defmethod st-json:write-json-element ((element real) stream)
-  (let ((s (if (and *json-float-minimum-fixed*
-                    *json-float-maximum-fixed*
-                    (>= (abs element) *json-float-minimum-fixed*)
-                    (< (abs element) *json-float-maximum-fixed*))
-               (format nil "~,vF" *json-float-precision* element)
-               (format nil "~,v,,,,,vE"
-                       *json-float-precision*
-                       (if *json-float-upper-case-exponent* #\E #\e)
-                       element))))
-    (if *json-float-elide-trailing-zeros*
-        (ppcre:register-groups-bind (pre post) (+float-scanner+ s)
-          (princ pre stream)
-          (princ post stream))
-        (princ s stream))))
-
-;; TODO Deal more gracefully with errors in the following.
-(defun describe-json (&rest keys &key json lisp)
-  "@table @var
-@item json
-a string
-
-@item lisp
-an expression
-@end table
-
-Displays the correspondance between a JSON value and a Lisp expression.
-Supply the JSON value as a string value of @var{json} or the Lisp expression as the
-value of @var{lisp}. The result is printed to @code{*standard-output*}. Multiple
-occurances of @var{json} or @var{lisp} may be provided, in which case the
-correspondances for all provided values will be shown.
-
-Examples:
-@example
-@group
- * (vh:describe-json
-     :json \"@{\\\"key\\\": 17@}\")
-
-     json: @{\"key\": 17@}
- <=> lisp: ((KEY . 17))
-@end group
-@end example
-
-@example
-@group
- * (vh:describe-json
-     :lisp #(1 \"a string\" () :null))
-
-     json: [1,\"a string\",@{@},null]
- <=> lisp: #(1 \"a string\" NIL :NULL)
-@end group
-@end example
-
-@example
-@group
- * (vh:describe-json
-     :json \"[1,@{\\\"s\\\":\\\"String\\\",\\\"NUM\\\":17,\\\"Array\\\":[2,7]@}, 3]\")
-
-     json: [1,@{\"s\":\"String\",\"NUM\":17,\"Array\":[2,7]@}, 3]
- <=> lisp: #(1 ((S . \"String\") (|num| . 17) (|Array| . #(2 7))) 3)
-@end group
-@end example
-
-@example
-@group
- * (vh:describe-json
-     :json \"@{\\\"aa*\\\":\\\"aa*\\\", \\\"AA*\\\":\\\"AA*\\\",\\\"Aa*\\\":\\\"Aa*\\\"@}\"
-     :lisp nil
-     :json \"[true, false, null, @{@}, [], \\\"\\\"]\")
-
-     json: @{\"aa*\":\"aa*\", \"AA*\":\"AA*\",\"Aa*\":\"Aa*\"@}
- <=> lisp: ((AA* . \"aa*\") (|aa*| . \"AA*\") (|Aa*| . \"Aa*\"))
-
-     json: @{@}
- <=> lisp: NIL
-
-     json: [true, false, null, @{@}, [], \"\"]
- <=> lisp: #(:TRUE :FALSE :NULL NIL #() \"\")
-@end group
-@end example"
-  (declare (ignore json lisp))
-  (labels ((format-list (label list)
-             (format t "~&~10<~A: ~>~A~%~{~10T~A~%~}" label (first list) (rest list)))
-           (describe-one (json lisp)
-             (format-list "json" (split-sequence #\newline (string-trim +whitespace+ json)))
-             (format-list "<=> lisp" (split-sequence #\newline (format nil "~:W" lisp)))))
-    (loop for (key value . rest) on keys by #'cddr
-          do (ecase key
-               (:json (check-type value string)
-                      (describe-one value
-                                    (unpack-json (st-json:read-json-from-string value))))
-               (:lisp (describe-one (st-json:write-json-to-string (pack-json value))
-                                    value)))
-          when rest do (terpri *standard-output*)))
-  (values))
-
 
 
 ;; ACT-R chunk creation
@@ -568,19 +906,3 @@ TODO: this clearly needs an example."
           (t (iter (for (nil . value) :in json)
                    (when (listp value)
                      (chunkify-ids value merge)))))))
-
-
-;;; STAP
-
-(defun stapify (json)
-  "Further decodes a piece of decoded JSON according to STAP's convention of using JSON
-arrays to represent object-like values that preserve order."
-  (if (vectorp json)
-      (iter (for elem :in-vector json)
-            (collect
-                (cond ((vectorp elem)
-                       (unless (eql (length elem) 2)
-                         (error "Unexpected subvector in STAP: ~S" elem))
-                       (cons (string-to-symbol (elt elem 0)) (elt elem 1)))
-                      (t (cons (string-to-symbol elem) t)))))
-      json))

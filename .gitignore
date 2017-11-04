@@ -1,8 +1,10 @@
 *.fasl
 *.fas
 *.?x??fsl
-doc/includes/
+doc/inc/
 doc/voorhees.aux
+doc/voorhees.cp
+doc/voorhees.cps
 doc/voorhees.fn
 doc/voorhees.fns
 doc/voorhees.html

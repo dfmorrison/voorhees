@@ -1,6 +1,6 @@
 \input texinfo
 @c %**start of header
-@include includes/version.texi
+@include inc/voorhees-version.texi
 @settitle Voorhees @value{VERSION}
 @setchapternewpage off
 @c %**end of header
@@ -13,7 +13,7 @@
 @copying
 This is documentation of Voorhees, version @value{VERSION}.
 
-Copyright @copyright{} 2016 Carnegie Mellon University.
+Copyright @copyright{} 2016-2017 Carnegie Mellon University.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright
@@ -46,13 +46,13 @@ cognitive architecture to interact with other software on the same or another ma
 Voorhees
 @itemize
 @item
-facilitates the creation of a TCP connection, either as a client or a server, to the cooperating software;
-
-@item
 parses JSON values read from the connection to Lisp S-expressions;
 
 @item
 formats Lisp S-expressions to JSON values and writes them to the connection;
+
+@item
+facilitates the creation of a TCP connection, either as a client or a server, to the cooperating software;
 
 @item
 and automates the creation ACT-R chunks from JSON values.
@@ -109,8 +109,41 @@ Once this is done, and Lisp restarted if necessary, Voorhees can be loaded into 
 evaluating @code{(ql:quickload :voorhees)}. In addition to Voorhees itself this will also
 load the other libraries on which it depends.
 
-@node Using Voorhees
-@chapter Using Voorhees
+@node The @code{voorhees} Package
+@chapter The @code{voorhees} Package
+
+The names of the functions provided by Voorhees are all in the Lisp package
+@code{voorhees}, and thus must typically be cited with an explicit package name
+@code{voorhees:}, for example @code{voorhees:read-json}. This package is defined with
+a nickname, @code{vh}, and so a shorter equivalent is @code{vh:read-json}.
+
+Alternatively the names can be made available without a prefix by calling the
+Lisp function @code{use-package}:
+@lisp
+(use-package :voorhees)
+@end lisp
+
+@node Reading and Writing JSON Values
+@chapter Reading and Writing JSON Values
+
+@include inc/read-json-summary.texi
+
+@include inc/read-json-function.texi
+@include inc/parse-json-function.texi
+@include inc/write-json-function.texi
+@include inc/json-string-function.texi
+
+@include inc/default-at-keys-variable.texi
+@include inc/default-float-elide-trailing-zeros-variable.texi
+@include inc/default-float-format-variable.texi
+@include inc/default-float-maximum-fixed-variable.texi
+@include inc/default-float-minimum-fixed-variable.texi
+@include inc/default-float-precision-variable.texi
+@include inc/default-float-upper-case-exponent-variable.texi
+
+
+@node Running Models with Voorhees
+@chapter Running Models with Voorhees
 
 The basic interaction with Voorhees is that it creates a TCP socket, either
 as the client or the server, with which it connects to the software with which it is
@@ -128,129 +161,11 @@ the JSON value to be sent back over the TCP connection, or @code{nil}
 if no response is to be sent. How JSON values are represented in Lisp
 is described below.
 
-@include includes/run-model.texi
-
-@node Lisp Representation of JSON Values
-@chapter Lisp Representation of JSON Values
-
-A JSON value is represented in Lisp as nestings of atoms, a-lists and
-simple vectors, isomorphic to the JSON value, as follows.
-
-A JSON @strong{array} is represented by a Lisp general vector, each element of which is
-the Lisp representation of the JSON value that is an element of the JSON array.
-
-A JSON @strong{object} is represented by a Lisp a-list, the car of each element
-corresponding to the string key of the JSON object, and the cdr to the corresponding JSON
-value in the object. The JSON strings that are the keys of the object members are
-converted to Lisp symbols. These keys may be user keys, or system keys, which latter
-are reserved for special use by Voorhees. Any key beginning with @samp{@@} is a system
-key, and all others are user keys. User keys are interned in the package that is the
-current value of @code{*json-object-key-package*}, which defaults to the current packaage.
-System keys are always keywords, interned in the keyword package.
-
-The case of these symbols, whether user keys or system keys, 
-is usually different than that of the JSON strings:
-@itemize
-@item
-if the JSON string contains lower case letters, as determined by the usual
-Lisp predicate @code{lower-case-p}, but no upper case
-letters (@code{upper-case-p}), it is converted to all upper case, with the usual
-Lisp function @code{string-upcase}, and then interned in the current package;
-
-@item
-if the JSON string contains upper case letters, but no lower case letters,
-it is converted to all lower case and then interned in the current package;
-
-@item
-otherwise the JSON string either contains no letters, or contains a mixture
-of upper case and lower case letters, and is interned as is.
-@end itemize
-@noindent
-With this convention the usual lower case only JSON keys are represented by the usual
-upper case only Lisp symbols. Note that a Lisp symbol with lower case letters,
-representing an upper case or mixed case JSON key string, will be read and written by
-Lisp using vertical bar or backslash notation.
-
-The JSON values of the objects named by these keys are
-converted to their Lisp representations and are the cdrs of the elements of the
-a-list. For system keys there are restrictions on what these values may be. The currently
-defined system keys and the restrictions on their values (@pxref{Creating ACT-R Chunks})
-are:
-@table @samp
-@item @@id
-The value must be either a string or a non-negative integer.
-
-@item @@value
-The value must be either a string or a non-negative integer.
-@end table
-Other system keys will be defined in future versions of Voorhees, and users should avoid
-using any names beginning with @samp{@@} as user keys.
-
-A JSON @strong{string}, other than a key in an object, is represented by the
-corresponding Lisp string, with no alteration of case.
-
-A JSON @strong{number} without a decimal point is represented by a Lisp integer.
-
-A JSON @strong{number} with a decimal point is represented by a Lisp float. Note
-that in Lisp it will typically be a binary representation of the number and thus not
-necessarily exactly equal to the decimal representation in JSON.
-The particular floating point format used, @code{double-float} by default, can
-be controlled by the variable @code{*json-float-format*}.
-@xref{@code{*json-float-format*}}.
-
-The JSON @strong{special values} @code{true}, @code{false} and @code{null} are
-represented by the Lisp keywords @code{:true}, @code{:false} and @code{:null},
-respectively. In particular @code{false} and @code{null} are @emph{not} represented by
-Lisp @code{nil}, which instead represents a JSON empty object, @code{@{@}}. A JSON
-empty array, @code{[]}, is represented by an empty Lisp vector, @code{#()}.
-
-@node Visualizing the Correspondance between JSON objects and Lisp Expressions
-@chapter Visualizing the Correspondance between JSON objects and Lisp Expressions
-
-To help visualize the correspondance between JSON objects and Lisp expression
-Voorhees provides a utility, @code{describe-json}, that takes either a string
-containing a JSON value or a Lisp expression, and prints to standard output both
-the JSON and Lisp versions of that value.
-
-@include includes/describe-json.texi
+@include inc/run-model-function.texi
 
 @node Creating ACT-R Chunks
 @chapter Creating ACT-R Chunks
 
-@include includes/chunkify.texi
-
-
-@node The @code{voorhees} Package
-@chapter The @code{voorhees} Package
-
-The names of the functions provided by Voorhees are all in the Lisp package
-@code{voorhees}, and thus must typically be cited with an explicit package name
-@code{voorhees:}, for example @code{voorhees:run-model}. This package is defined with
-a nickname, @code{vh}, and so a shorter equivalent is @code{vh:run-model}.
-
-Alternatively the names can be made available without a prefix by calling the
-Lisp function @code{use-package}:
-@lisp
-(use-package :voorhees)
-@end lisp
-
-@node Configuring Voorhees
-@chapter Configuring Voorhees
-
-There are several variables that can be used to configure how Voorhees behaves.
-
-@include includes/json-object-key-package.texi
-
-@anchor{@code{*json-float-format*}}
-@include includes/json-float-format.texi
-
-@include includes/json-float-minimum-fixed.texi
-
-@include includes/json-float-precision.texi
-
-@include includes/json-float-elide-trailing-zeros.texi
-
-@include includes/json-float-upper-case-exponent.texi
-
+@include inc/chunkify-function.texi
 
 @bye
