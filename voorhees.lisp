@@ -173,12 +173,12 @@ respectively. In particular @code{false} and @code{null} are @emph{not} represen
 Lisp @code{nil}, which instead represents a JSON empty object, @code{@{@}}. A JSON
 empty array, @code{[]}, is represented by an empty Lisp vector, @code{#()}.
 
-This representation of JSON values in Lisp is essentially reversable. When when writing
-back such a value back to JSON it will be equivalent to the original version read. The
-only differences are: floating point numbers of high precision may be slightly altered
-because of the conversion to and from a fixed-precision, binary form which is typically
-not an issue for numbers with only a few digits of precision; and whitespace between JSON
-tokens will be removed (of course, whitespace within JSON strings is retained).
+This representation of JSON values in Lisp is essentially reversable. When writing back
+such a value back to JSON it will be equivalent to the original version read. The only
+differences are: floating point numbers of high precision may be slightly altered because
+of the conversion to and from a fixed-precision, binary form which is typically not an
+issue for numbers with only a few digits of precision; and whitespace between JSON tokens
+will be removed (of course, whitespace within JSON strings is retained).
 
 As an example of the correspondence between JSON values and Lisp form, with Voorhees's
 initial configuration, the JSON value
@@ -204,12 +204,12 @@ Reads a JSON value from the character input stream @var{stream}, skipping any le
 whitespace and reading and discarding any trailing whitespace, and returns its Lisp
 representation.
 
-This function will block until a complete JSON value has been consumed. In addition, if the
-value is neither an object nor an array and the stream has not reached end of file it will
-need to peek at the next character to ensure it has finished reading the value. For this
-reason, when reading from a semi-interactive stream, such as from a TCP socket, it is
-highly recommended that each JSON value be followed by a newline or other whitespace
-character.
+This function will block until a complete JSON value has been consumed. In addition, if
+the value is none of an object, an array or a string, and the stream has not reached end
+of file, @code{read-json} will need to peek at the next character to ensure it has
+finished reading the value. For this reason, when reading from a semi-interactive stream,
+such as from a TCP socket, it is highly recommended that each JSON value be followed by a
+newline or other whitespace character.
 
 If @var{intern} is @code{t} keys of JSON objects will be represented as symbols interned
 in the package that is the current value of @code{*package*}. If @code{nil} keys will be
@@ -224,7 +224,7 @@ keys. If @var{at-keys} is not supplied the current value of @code{*default-at-ke
 used; it is initially @code{t}.
 
 If @var{float} is supplied it should be one of the atomic type specifiers
-@code{short-float}, @code{single-float}, @code{double-float} or @code{long-float}. And
+@code{short-float}, @code{single-float}, @code{double-float} or @code{long-float}. Any
 numbers in the JSON value that contain a decimal point are read as Lisp floating point
 numbers of this type, subject to the usual collapsing of floating point types if all are
 not supported by a particular implementation. If @var{float} is not supplied it defaults
@@ -567,10 +567,11 @@ precision is not a positive integer.
     (remove-method #'st-json:write-json-element method)))
 
 (defmethod st-json:write-json-element ((element real) stream)
-  (let ((s (if (and *float-minimum-fixed*
-                    *float-maximum-fixed*
-                    (>= (abs element) *float-minimum-fixed*)
-                    (< (abs element) *float-maximum-fixed*))
+  (let ((s (if (or (zerop element)
+                   (and *float-minimum-fixed*
+                        *float-maximum-fixed*
+                        (>= (abs element) *float-minimum-fixed*)
+                        (< (abs element) *float-maximum-fixed*)))
                (format nil "~,vF" *float-precision* element)
                (format nil "~,v,,,,,vE"
                        *float-precision*
@@ -840,7 +841,7 @@ pointed at by the top level chunk are always added to declarative memory and not
 into a buffer; these inner chunks are either added or merged according to the value of
 @var{merge}. Returns the name of the new chunk.
 
-Not that there needs to be a current ACT-R model to call @code{chunkify}.
+Note that there needs to be a current ACT-R model to call @code{chunkify}.
 
 Becaue of Lisp package issues it is usually best to load ACT-R before Voorhees.
 
