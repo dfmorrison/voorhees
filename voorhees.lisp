@@ -727,16 +727,15 @@ connections indefintely. Use Control-C to kill it if necessary, or simply termin
   (write-log log-file "run-model opened a connection ~:[from~;to~] ~{~D~^.~}"
              remote-host (coerce (or remote-host usocket:*remote-host*) 'list))
   (unwind-protect
+       ;; TODO replace the following with read-json, catching appropriate errors
+       ;;      and dealing with them in some not too intrusive way
        (loop for (json success) = (multiple-value-list (read-multiline-json stream))
-             for unpacked-json = (and success (unpack-json json))
              while success
-             when log-json do (write-log log-file "received: ~S" unpacked-json)
-             do (when-let ((response (funcall model-fn unpacked-json)))
+             when log-json do (write-log log-file "received: ~S" json)
+             do (when-let ((response (funcall model-fn json)))
                   (when log-json
                     (write-log log-file "sending: ~S" response))
-                  (st-json:write-json (pack-json response) stream)
-                  (terpri stream)
-                  (finish-output stream)))
+                  (write-json response stream)))
     (write-log log-file "run-model done")))
 
 (define-constant +whitespace+ '(#\space #\newline #\tab #\return #\page) :test #'equal)
@@ -748,12 +747,19 @@ connections indefintely. Use Control-C to kill it if necessary, or simply termin
         while line
         do (format lines "~A~:[~%~;~]" line missing-newline)
         do (handler-case
-               (return (values (st-json:read-json-from-string lines) t))
+               (return (values (parse-json lines) t))
              (st-json:json-eof-error ()))
         finally (if (zerop (length (string-trim +whitespace+ lines)))
                     (return (values nil nil))
                     (error "End of file encountered while parsing multi-line JSON ~A"
                            lines))))
+
+(defun copy-json (json)
+  (etypecase json
+    ((or symbol number) json)
+    (string (copy-seq json))
+    (cons (cons (copy-json (car json)) (copy-json (cdr json))))
+    (vector (map 'simple-vector #'copy-json json))))
 
 
 ;; ACT-R chunk creation
@@ -795,6 +801,7 @@ come up with a unique guess, or if ACT-R has not yet been loaded, it will be set
 (define-actr-function overwrite-buffer-chunk)
 (define-actr-function purge-chunk-fct)
 (define-actr-function set-buffer-chunk)
+(define-actr-function schedule-event-relative)
 
 (defparameter *act-r-7-confirmed* nil)
 
@@ -812,7 +819,8 @@ come up with a unique guess, or if ACT-R has not yet been loaded, it will be set
 
 (defvar *chunk-table*)
 
-(defun chunkify (json &key buffer overwrite (merge t))
+(defun chunkify (json &key buffer overwrite (merge t)
+                        time-delta time-in-ms (module :none) (priority 0) (output t))
   "@table @var
 @item json
 an a-list
@@ -839,7 +847,17 @@ of declarative memory; if false a new chunk is added, even if it is equal to one
 in declarative memory. If @var{json} contains sub-objects, the corresponding chunks
 pointed at by the top level chunk are always added to declarative memory and not placed
 into a buffer; these inner chunks are either added or merged according to the value of
-@var{merge}. Returns the name of the new chunk.
+@var{merge}.
+
+Normally @code{chunkify} creates the chunk immediately. If @var{time-delta} is supplied
+and not @code{nil} it should be a non-negative number, and an event to create the chunk is
+schedule with ACT-R's @code{schedule-event-relative} at that time. If @var{time-delta} is
+supplied and not @code{nil} the values of @var{time-in-ms}, @var{module}, @var{priority}
+and @var{output} are passed to @code{schedule-event-relative}; otherwise those keyword
+arguments are ignored.
+
+If @var{time-delta} is not supplied or is @code{nil} @code{chunkify} returns the name of
+the new chunk. Otherwise the event scheduled is returned.
 
 Note that there needs to be a current ACT-R model to call @code{chunkify}.
 
@@ -856,9 +874,25 @@ TODO: this clearly needs an example."
   (ensure-act-r-7)
   (when (or (atom json) (atom (first json)))
     (error "Currently Voorhees can only convert non-empty JSON objects to ACT-R chunks (~S)" json))
-  (let ((*chunk-table* (make-hash-table :test #'equal)))
-    (chunkify-ids json merge t)
-    (%chunkify json buffer overwrite merge t)))
+  (labels ((deposit-chunk (jsn bffr owrt mrg)
+             (format t "~2%*** ~S ~S ~S ~S~2%" jsn bffr owrt mrg)
+             (let ((*chunk-table* (make-hash-table :test #'equal)))
+               (format t "~2%*** foo~2%")
+               (chunkify-ids jsn mrg t)
+               (format t "~2%*** bar~2%")
+               (%chunkify jsn bffr owrt mrg t)
+               (format t "~2%*** baz~2%")
+               )))
+    (if time-delta
+        (schedule-event-relative time-delta #'deposit-chunk
+                                 ;; json is defensively copied in case the caller changes
+                                 ;; it between when we return and when the event fires
+                                 :params (list (copy-json json) buffer overwrite merge)
+                                 :time-in-ms time-in-ms
+                                 :module module
+                                 :priority priority
+                                 :output output)
+        (deposit-chunk json buffer overwrite merge))))
 
 (defun slotify (symbol)
   (when (notevery #'alphanumericp (symbol-name symbol))

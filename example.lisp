@@ -50,10 +50,10 @@
 
 ;; Load ACT-R if it's not already present, and then Voorhees.
 #-ACT-R
-(load (merge-pathnames (make-pathname :directory "actr7"
+(load (merge-pathnames (make-pathname :directory '(:relative "actr7")
                                       :name "load-act-r"
                                       :type "lisp")
-                       *actr7-parent*)
+                       (or *actr7-parent* *default-pathname-defaults*))
       :verbose t
       :print nil)
 
