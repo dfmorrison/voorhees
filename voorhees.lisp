@@ -380,10 +380,10 @@ to semi-interactive streams, such as TCP sockets.
 
 If the generalized boolean @var{finish} is true, the default, it calls
 @code{finish-output} on @var{stream} after writing the JSON value, and a line termination
-if request, to @var{stream}, flushing the output buffer. This is usually the necessary
-when writing to semi-interactive streams, such as TCP sockets. In other situations if such
-buffer flushing causes too much unnecessary overhead it can be suppressed by supplying a
-value of @code{nil} for @var{finish}.
+if requested, to @var{stream}, flushing the output buffer. This is usually necessary when
+writing to semi-interactive streams, such as TCP sockets. If, in other situations, such as
+writing to files, such buffer flushing causes too much unnecessary overhead it can be
+suppressed by supplying a value of @code{nil} for @var{finish}.
 
 If @var{minimum-fixed} and/or @var{maximum-fixed} are supplied they should be positive,
 real numbers. They determine whether floating point numbers, when converted to JSON, are
