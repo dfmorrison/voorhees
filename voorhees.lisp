@@ -35,6 +35,7 @@
            #:parse-json
            #:read-json
            #:run-model
+           #:with-tcp-stream
            #:write-json))
 
 (in-package :voorhees)
@@ -583,6 +584,26 @@ precision is not a positive integer.
           (princ post stream))
         (princ s stream))))
 
+;; Sheesh. Don't block waiting for whitespace.
+(fmakunbound 'st-json::skip-whitespace)
+(defun st-json::skip-whitespace (stream)
+  (declare #.st-json::*optimize*)
+  (loop :while (and (listen stream)
+                    (st-json::is-whitespace (peek-char nil stream nil)))
+        :do (read-char stream)))
+
+
+
+;;; While usocket has a with-client-socket macro, it's sloppily done and trashes
+;;; declarations in its body.
+(defmacro with-tcp-stream ((stream-var &rest socket-connect-args) &body body)
+  `(let (#0=#:socket)
+     (unwind-protect
+          (let ((,stream-var (usocket:socket-stream
+                              (setf #0# (usocket:socket-connect ,@socket-connect-args)))))
+            ,@body)
+       (usocket:socket-close #0#))))
+
 
 
 (defun run-model (model-fn port &key host timeout log-file log-json repeat)
@@ -875,14 +896,9 @@ TODO: this clearly needs an example."
   (when (or (atom json) (atom (first json)))
     (error "Currently Voorhees can only convert non-empty JSON objects to ACT-R chunks (~S)" json))
   (labels ((deposit-chunk (jsn bffr owrt mrg)
-             (format t "~2%*** ~S ~S ~S ~S~2%" jsn bffr owrt mrg)
              (let ((*chunk-table* (make-hash-table :test #'equal)))
-               (format t "~2%*** foo~2%")
                (chunkify-ids jsn mrg t)
-               (format t "~2%*** bar~2%")
-               (%chunkify jsn bffr owrt mrg t)
-               (format t "~2%*** baz~2%")
-               )))
+               (%chunkify jsn bffr owrt mrg t))))
     (if time-delta
         (schedule-event-relative time-delta #'deposit-chunk
                                  ;; json is defensively copied in case the caller changes
