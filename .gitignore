@@ -1,17 +1,3 @@
 *.fasl
 *.fas
 *.?x??fsl
-doc/inc/
-doc/voorhees.aux
-doc/voorhees.cp
-doc/voorhees.cps
-doc/voorhees.fn
-doc/voorhees.fns
-doc/voorhees.html
-doc/voorhees.info
-doc/voorhees.log
-doc/voorhees.pdf
-doc/voorhees.toc
-doc/voorhees.vr
-doc/voorhees.vrs
-doc/voorhees/
