@@ -1,0 +1,36 @@
+{}
+
+
+
+[]null
+true
+false
+{}
+[]
+["foo", {}, {"@bazoo":               100}, true]
+
+
+
+{"foo":"bar"}
+{"foob":"bar"}{"foob":19}{"foob":19.0} null 0
+{"foob":"bar"}{"foob":19}{"foob":19.0}null 0
+{"foob"
+
+ :"bar"
+}{"foob":19}{"foob":19.0}
+{"foob":19}{"foob":19.0}
+22
+
+
+
+
+
+
+{ "key1": "a value",
+  "KEY2": [ true, 3.14, null, { "Key3": {}}, false],
+  "@id": 17,
+  "key4": [] }
+
+
+
+"{ /"key1/": /"a value/", /"KEY2/": [ true, 3.14, null, { /"Key3/": {}}, false], /"@id/": 17, /"key4/": [] }"
